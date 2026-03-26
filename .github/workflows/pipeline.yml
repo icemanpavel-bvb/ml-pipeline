@@ -8,40 +8,73 @@ on:
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install pandas numpy scikit-learn scipy joblib
       
-      - name: Run pipeline
+      - name: Run data creation
+        run: python3 data_creation.py
+      
+      - name: Run data quality check
+        run: python3 data_quality_check.py
+      
+      - name: Check and fix issues
         run: |
-          python3 data_creation.py
-          python3 data_quality_check.py
-          
-          # Исправление при наличии проблем
           if [ -f "quality_report.json" ]; then
             HAS_ISSUES=$(python3 -c "
           import json
           with open('quality_report.json') as f:
-              r = json.load(f)
-              exit(0 if r['summary']['total_missing']+r['summary']['total_zscore_anomalies']+r['summary']['total_iqr_anomalies']>0 else 1)
+              report = json.load(f)
+              total = report['summary']['total_missing'] + report['summary']['total_zscore_anomalies'] + report['summary']['total_iqr_anomalies']
+              exit(0 if total > 0 else 1)
           ")
-            [ $? -eq 0 ] && python3 data_fix.py
+            if [ $? -eq 0 ]; then
+              echo "Issues detected. Running data fixing..."
+              python3 data_fix.py
+            else
+              echo "No issues detected. Skipping data fixing."
+            fi
           fi
-          
-          python3 model_preprocessing.py
-          python3 model_preparation.py
-          python3 model_testing.py
+      
+      - name: Run preprocessing
+        run: python3 model_preprocessing.py
+      
+      - name: Run model training
+        run: python3 model_preparation.py
+      
+      - name: Run model testing
+        run: python3 model_testing.py
       
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: pipeline-results
           path: |
             *.pkl
             *.json
+            train/*.csv
+            test/*.csv
+          retention-days: 30
+      
+      - name: Display test results
+        run: |
+          echo "=========================================="
+          echo "PIPELINE EXECUTION COMPLETE"
+          echo "=========================================="
+          if [ -f "model.pkl" ]; then
+            echo "✓ Model saved successfully"
+          fi
+          if [ -f "quality_report.json" ]; then
+            echo "✓ Quality report generated"
+          fi
