@@ -26,21 +26,33 @@ def detect_anomalies_zscore(df, column, filename, report, threshold=3):
     if column not in df.columns or df[column].nunique() < 3:
         return []
     
-    z_scores = np.abs(stats.zscore(df[column].dropna()))
-    anomaly_indices = df[df[column].notna()].index[z_scores > threshold].tolist()
+    # Получаем только не-null значения
+    valid_data = df[column].dropna()
+    if len(valid_data) < 3:
+        return []
+    
+    z_scores = np.abs(stats.zscore(valid_data))
+    anomaly_mask = z_scores > threshold
+    anomaly_indices = valid_data.index[anomaly_mask].tolist()
     
     if anomaly_indices:
         for idx in anomaly_indices:
+            # Находим z-score для этого индекса
+            idx_in_valid = valid_data.index.get_loc(idx)
+            z_score_value = float(z_scores[idx_in_valid])
+            
             report['anomalies_zscore'].append({
                 'file': filename,
                 'column': column,
                 'index': int(idx),
                 'value': float(df.loc[idx, column]),
-                'z_score': float(z_scores[df[column].notna()].iloc[anomaly_indices.index(idx)]),
+                'z_score': z_score_value,
                 'threshold': threshold
             })
     
     return anomaly_indices
+
+
 
 def detect_anomalies_iqr(df, column, filename, report, multiplier=1.5):
     """Обнаружение аномалий методом межквартильного размаха (IQR)"""
